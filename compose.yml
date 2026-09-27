@@ -1,0 +1,64 @@
+# pyfa web, single machine with SQLite in WAL mode.
+#
+#   docker compose up --build          # http://localhost:8080
+#
+# Before exposing this to anyone, register an EVE SSO application whose callback
+# URL is <public_url> + sso.callback_path (/api/auth/callback, or a bare origin if
+# the portal has one), then put its credentials into web.yml (see below). Until
+# then use PYFA_WEB_DEV_AUTH_BYPASS=1 to try it out locally.
+#
+# Per-machine values live outside this file, which keeps the defaults working for
+# a bare `docker compose up`:
+#   .env      -- gitignored, read by compose itself; host port and public URL
+#   web.yml   -- gitignored, mounted read-only; the server config, including the
+#                SSO credentials (start from web.yml.example)
+# Environment variables win over web.yml, so a value repeated in both places has
+# to agree; .env is the intended place to override.
+#
+# A deployment whose registered callback is http://8.138.203.48/api/auth/callback
+# therefore needs PYFA_WEB_PUBLISH=80 (no port in public_url means the browser
+# comes back to host port 80 and nowhere else) and
+# PYFA_WEB_PUBLIC_URL=http://8.138.203.48.
+
+services:
+  pyfa-web:
+    build: .
+    image: pyfa-web:latest
+    restart: unless-stopped
+    ports:
+      # One callback URL can only be served by one application: if something else
+      # on this host already holds the host port the callback uses -- a reverse
+      # proxy, another EVE application -- either stop it or register a callback
+      # URL of pyfa web's own and match public_url to it. See web/docs/web.md.
+      - "${PYFA_WEB_PUBLISH:-8080}:8080"
+    volumes:
+      # app.db, one saveddata.db per user, server settings, logs
+      - pyfa-data:/data
+      # Required, and deliberately not created on demand: a missing web.yml should
+      # fail here rather than leave the server running with default configuration.
+      - type: bind
+        source: ./web.yml
+        target: /app/web.yml
+        read_only: true
+        bind:
+          create_host_path: false
+    environment:
+      # Must match the registered callback URL exactly, scheme and port included.
+      PYFA_WEB_PUBLIC_URL: "${PYFA_WEB_PUBLIC_URL:-http://localhost:8080}"
+      # Language and log level come from web.yml: an environment variable would
+      # win over the file, and an empty one is worse than an absent one.
+      # The client credentials live in web.yml. Fill these two only if you prefer
+      # the environment; a variable wins over the file, so a half-filled pair here
+      # silently overrides it.
+      # PYFA_WEB_SSO_CLIENT_ID: ""
+      # PYFA_WEB_SSO_CLIENT_SECRET: ""
+      # Development only: logs everyone in as one shared account. Do not enable
+      # on a host reachable from the internet -- see web/docs/web.md
+      PYFA_WEB_DEV_AUTH_BYPASS: "${PYFA_WEB_DEV_AUTH_BYPASS:-0}"
+      # Only when the mounted web.yml's callback_path (the path its own
+      # registration has) is not the one this application was given. An empty
+      # value is ignored, so the file wins when .env leaves this unset.
+      PYFA_WEB_SSO_CALLBACK_PATH: "${PYFA_WEB_SSO_CALLBACK_PATH:-}"
+
+volumes:
+  pyfa-data:

@@ -24,6 +24,7 @@ from sqlalchemy import MetaData, create_engine, event, text
 from sqlalchemy.orm import registry, sessionmaker, scoped_session
 
 from . import migration
+from . import sessionctx
 from eos import config
 from logbook import Logger
 
@@ -50,10 +51,19 @@ def re_fn(expr, item):
 
 pyfalog.debug('Initializing gamedata')
 gamedata_connectionstring = config.gamedata_connectionstring
+# The web server sets a pool class: its worker threads come and go, and a session
+# holds its connection until it is closed, so a fixed-size pool would run dry.
+# This is read-only data, so one connection per thread is all that is needed.
+gamedata_engine_kwargs = {}
+gamedata_pool_class = getattr(config, 'gamedataPoolClass', None)
+if gamedata_pool_class is not None:
+    gamedata_engine_kwargs['poolclass'] = gamedata_pool_class
+
 if callable(gamedata_connectionstring):
-    gamedata_engine = create_engine("sqlite://", creator=gamedata_connectionstring, echo=config.debug)
+    gamedata_engine = create_engine(
+        "sqlite://", creator=gamedata_connectionstring, echo=config.debug, **gamedata_engine_kwargs)
 else:
-    gamedata_engine = create_engine(gamedata_connectionstring, echo=config.debug)
+    gamedata_engine = create_engine(gamedata_connectionstring, echo=config.debug, **gamedata_engine_kwargs)
 
 
 @event.listens_for(gamedata_engine, 'connect')
@@ -62,13 +72,22 @@ def create_functions(dbapi_connection, connection_record):
 
 
 gamedata_meta = MetaData()
-GamedataSession = scoped_session(sessionmaker(bind=gamedata_engine, autoflush=False, expire_on_commit=False))
+GamedataSessionMaker = sessionmaker(bind=gamedata_engine, autoflush=False, expire_on_commit=False)
+GamedataSession = scoped_session(GamedataSessionMaker)
 gamedata_session = GamedataSession()
 
 gamedata_sessions = {threading.get_ident(): gamedata_session}
 
 
 def get_gamedata_session():
+    """One game-data session per thread.
+
+    Deliberately not per request: services cache the objects they load (the market
+    browser keeps every item it has looked up), and closing a session detaches
+    them, so a per-request session would hand detached objects to the next
+    request. The server makes this safe by using an uncapped pool -- see
+    ``gamedataPoolClass`` above.
+    """
     thread_id = threading.get_ident()
     if thread_id not in gamedata_sessions:
         gamedata_sessions[thread_id] = GamedataSession()
@@ -102,7 +121,9 @@ if saveddata_connectionstring is not None:
         saveddata_engine = create_engine(saveddata_connectionstring, echo=config.debug)
 
     saveddata_meta = MetaData()
-    saveddata_session = sessionmaker(bind=saveddata_engine, autoflush=False, expire_on_commit=False)()
+    # The default session serves the desktop application, which has a single user.
+    # The web application binds a per-user session instead; see eos/db/sessionctx.py
+    saveddata_session_default = sessionmaker(bind=saveddata_engine, autoflush=False, expire_on_commit=False)()
 else:
     saveddata_meta = None
 
@@ -110,8 +131,24 @@ else:
 mapper_registry = registry()
 mapper = mapper_registry.map_imperatively
 
-# Lock controlling any changes introduced to session
-sd_lock = threading.RLock()
+# Default lock controlling changes introduced to the default (desktop) session.
+# Web mode resolves to a per-user lock instead; see eos/db/sessionctx.py
+sd_lock_default = threading.RLock()
+
+from eos.db.sessionctx import SessionLockProxy, SessionContext, SaveddataSessionProxy, set_default_context  # noqa: E402
+
+if saveddata_meta is not None:
+    set_default_context(SessionContext(
+        name='default',
+        session=saveddata_session_default,
+        lock=sd_lock_default,
+        engine=saveddata_engine,
+    ))
+    saveddata_session = SaveddataSessionProxy()
+else:
+    saveddata_session = None
+
+sd_lock = SessionLockProxy(fallback=sd_lock_default)
 
 pyfalog.debug('Importing gamedata DB scheme')
 # Import all the definitions for all our database stuff

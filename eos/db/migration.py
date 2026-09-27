@@ -52,7 +52,14 @@ def getAppVersion():
     return migrations.appVersion
 
 
-def update(saveddata_engine):
+def update(saveddata_engine, savePath=None, saveDB=None):
+    # Web mode migrates one database per user and passes its own paths; the desktop
+    # application keeps using the locations from the global config.
+    if savePath is None:
+        savePath = config.savePath
+    if saveDB is None:
+        saveDB = config.saveDB
+
     dbVersion = getVersion(saveddata_engine)
     appVersion = getAppVersion()
 
@@ -62,12 +69,12 @@ def update(saveddata_engine):
     if dbVersion < appVersion:
         # Automatically backup database
         toFile = "%s/saveddata_migration_%d-%d_%s.db" % (
-            config.savePath,
+            savePath,
             dbVersion,
             appVersion,
             time.strftime("%Y%m%d_%H%M%S"))
 
-        shutil.copyfile(config.saveDB, toFile)
+        shutil.copyfile(saveDB, toFile)
 
         with saveddata_engine.connect() as connection:
             wrapped = _MigrationConnection(connection)

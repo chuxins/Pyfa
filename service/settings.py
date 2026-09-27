@@ -41,9 +41,17 @@ class SettingsProvider:
         BASE_PATH = os.path.join(config.savePath, 'settings')
     settings = {}
     _instance = None
+    # Set by the web application so that each user gets their own settings directory.
+    # When None (the desktop application) the single-user behaviour is unchanged.
+    basePathResolver = None
 
     @classmethod
     def getBasePath(cls):
+        if cls.basePathResolver is not None:
+            basePath = cls.basePathResolver()
+            if basePath and not os.path.exists(basePath):
+                os.makedirs(basePath, exist_ok=True)
+            return basePath
         basePath = getattr(cls, 'BASE_PATH', None)
         if not basePath and config.savePath:
             basePath = cls.BASE_PATH = os.path.join(config.savePath, 'settings')
@@ -64,12 +72,19 @@ class SettingsProvider:
                 os.mkdir(self.BASE_PATH)
 
     def getSettings(self, area, defaults=None):
-        # type: (basestring, dict) -> service.Settings
-        # NOTE: needed to change for tests
-        # TODO: Write to memory with mmap -> https://docs.python.org/2/library/mmap.html
-        settings_obj = self.settings.get(area)
+        # type: (basestring, dict) -> service.Settings | ScopedSettings
+        if self.basePathResolver is not None:
+            # Multi-user mode: hand out a view that resolves the current user's file
+            # on every access, since the settings singletons in this module cache
+            # whatever they are given at import time.
+            return ScopedSettings(self, area, defaults)
+        return self._loadSettings(area, defaults)
+
+    def _loadSettings(self, area, defaults=None):
+        basePath = self.getBasePath()
+        cacheKey = (basePath, area)
+        settings_obj = self.settings.get(cacheKey)
         if settings_obj is None:
-            basePath = self.getBasePath()
             canonical_path = os.path.join(basePath, area) if basePath else ""
             if not os.path.exists(canonical_path):  # path string or empty string.
                 info = {}
@@ -88,7 +103,7 @@ class SettingsProvider:
                     info = {}
                     info.update(defaults)
 
-            self.settings[area] = settings_obj = Settings(canonical_path, info)
+            self.settings[cacheKey] = settings_obj = Settings(canonical_path, info)
         return settings_obj
 
     def saveAll(self):
@@ -145,6 +160,48 @@ class Settings:
 
     def items(self):
         return list(self.info.items())
+
+
+class ScopedSettings:
+    """A dict-like view over the settings file of whoever is making the request.
+
+    The settings singletons in this module grab their ``Settings`` object once, at
+    first instantiation, which is fine for the desktop application but wrong for a
+    server hosting several users. Instances of this class are handed out instead
+    when :attr:`SettingsProvider.basePathResolver` is set, and they resolve to the
+    current user's file on every access.
+    """
+
+    def __init__(self, provider, area, defaults=None):
+        object.__setattr__(self, '_provider', provider)
+        object.__setattr__(self, '_area', area)
+        object.__setattr__(self, '_defaults', defaults)
+
+    def _target(self):
+        return self._provider._loadSettings(self._area, self._defaults)
+
+    def __getitem__(self, key):
+        return self._target()[key]
+
+    def __setitem__(self, key, value):
+        self._target()[key] = value
+
+    def __contains__(self, key):
+        return key in self._target().info
+
+    def __iter__(self):
+        return iter(self._target().info)
+
+    def __len__(self):
+        return len(self._target().info)
+
+    def __getattr__(self, name):
+        if name.startswith('_'):
+            raise AttributeError(name)
+        return getattr(self._target(), name)
+
+    def __repr__(self):
+        return "<ScopedSettings {}>".format(self._area)
 
 
 class NetworkSettings:

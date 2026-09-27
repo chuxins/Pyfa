@@ -55,6 +55,43 @@ INV_FLAG_CARGOBAY = 5
 INV_FLAG_DRONEBAY = 87
 INV_FLAG_FIGHTER = 158
 
+# ESI names the flags ('HiSlot0', 'DroneBay', 'Cargo'); pyfa's own format -- and
+# everything below -- uses EVE's inventory flag ids. Both spellings are accepted when
+# importing, so a fitting read from ESI arrives as complete as one pyfa exported.
+_FLAG_GROUPS = {
+    "HiSlot": INV_FLAGS[FittingSlot.HIGH],
+    "MedSlot": INV_FLAGS[FittingSlot.MED],
+    "LoSlot": INV_FLAGS[FittingSlot.LOW],
+    "RigSlot": INV_FLAGS[FittingSlot.RIG],
+    "SubSystemSlot": INV_FLAGS[FittingSlot.SUBSYSTEM],
+    "ServiceSlot": INV_FLAGS[FittingSlot.SERVICE],
+}
+
+_FLAG_NAMES = {
+    "Cargo": INV_FLAG_CARGOBAY,
+    "DroneBay": INV_FLAG_DRONEBAY,
+    "FighterBay": INV_FLAG_FIGHTER,
+}
+
+
+def _flagId(flag):
+    """The inventory flag id for a flag spelled either way; unchanged when unknown."""
+    if isinstance(flag, int):
+        return flag
+    if flag in _FLAG_NAMES:
+        return _FLAG_NAMES[flag]
+    if isinstance(flag, str):
+        if flag.startswith("FighterTube"):
+            # A launched squadron sits in a tube rather than in the bay; an import does
+            # not care which, it appends the fighter either way
+            return INV_FLAG_FIGHTER
+        for prefix, base in _FLAG_GROUPS.items():
+            if flag.startswith(prefix):
+                index = flag[len(prefix):]
+                if index.isdigit():
+                    return base + int(index)
+    return flag
+
 
 def exportESI(ofit, exportCharges, exportImplants, exportBoosters, callback):
     # A few notes:
@@ -165,7 +202,9 @@ def importESI(string):
     sMkt = Market.getInstance()
     fitobj = Fit()
     refobj = json.loads(string)
-    items = refobj['items']
+    # Flags decide where an item goes: named ones come from ESI, ids from pyfa's own
+    # export. Sorting below needs one or the other, never a mixture.
+    items = [dict(item, flag=_flagId(item.get('flag', 0))) for item in refobj['items']]
     # "<" and ">" is replace to "&lt;", "&gt;" by EVE client
     fitobj.name = refobj['name']
     # 2017/03/29: read description

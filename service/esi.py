@@ -13,11 +13,9 @@ from service.const import EsiLoginMethod, EsiSsoMode
 from eos.saveddata.ssocharacter import SsoCharacter
 from service.esiAccess import APIException, GenericSsoError
 import gui.globalEvents as GE
-from gui.ssoLogin import SsoLogin
 from service.server import StoppableHTTPServer, AuthHandler
 from service.settings import EsiSettings
 from service.esiAccess import EsiAccess
-import gui.mainFrame
 
 from requests import Session
 
@@ -87,8 +85,14 @@ class Esi(EsiAccess):
         self.fittings_deleted = set()
 
         # need these here to post events
-        import gui.mainFrame  # put this here to avoid loop
-        self.mainFrame = gui.mainFrame.MainFrame.getInstance()
+        self.mainFrame = None
+        try:
+            import gui.mainFrame  # put this here to avoid loop
+            self.mainFrame = gui.mainFrame.MainFrame.getInstance()
+        except Exception as e:
+            # Headless (web) mode: there is no MainFrame to post events to. Event
+            # delivery is handled by the caller instead, see web/services/events.py
+            pyfalog.debug("No GUI event target available: %s", e)
 
     def delSsoCharacter(self, id):
         char = eos.db.getSsoCharacter(id, config.getClientSecret())
@@ -99,7 +103,8 @@ class Esi(EsiAccess):
         for x in char.characters:
             x._Character__ssoCharacters.remove(char)
         eos.db.remove(char)
-        wx.PostEvent(self.mainFrame, GE.SsoLogout(charID=id))
+        if self.mainFrame is not None:
+            wx.PostEvent(self.mainFrame, GE.SsoLogout(charID=id))
 
     def getSsoCharacters(self):
         chars = eos.db.getSsoCharacters(config.getClientSecret())
@@ -137,8 +142,10 @@ class Esi(EsiAccess):
         self.fittings_deleted.add(fittingID)
 
     def login(self):
+        from gui.ssoLogin import SsoLogin  # GUI-only; imported lazily so headless mode can load this module
+
         start_server = self.settings.get('loginMode') == EsiLoginMethod.SERVER and self.server_base.supports_auto_login
-        with gui.ssoLogin.SsoLogin(self.server_base, start_server) as dlg:
+        with SsoLogin(self.server_base, start_server) as dlg:
             if dlg.ShowModal() == wx.ID_OK:
                 from gui.esiFittings import ESIExceptionHandler
 
@@ -208,7 +215,8 @@ class Esi(EsiAccess):
         Esi.update_token(currentCharacter, auth_response)
 
         eos.db.save(currentCharacter)
-        wx.PostEvent(self.mainFrame, GE.SsoLogin(character=currentCharacter))
+        if self.mainFrame is not None:
+            wx.PostEvent(self.mainFrame, GE.SsoLogin(character=currentCharacter))
 
     # get (endpoint, char, data?)
 

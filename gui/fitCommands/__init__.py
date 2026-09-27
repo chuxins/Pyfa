@@ -1,83 +1,114 @@
-from .gui.booster.add import GuiAddBoosterCommand
-from .gui.booster.changeMeta import GuiChangeBoosterMetaCommand
-from .gui.booster.imprt import GuiImportBoostersCommand
-from .gui.booster.remove import GuiRemoveBoostersCommand
-from .gui.booster.sideEffectToggleState import GuiToggleBoosterSideEffectStateCommand
-from .gui.booster.toggleStates import GuiToggleBoosterStatesCommand
-from .gui.cargo.add import GuiAddCargoCommand
-from .gui.cargo.changeAmount import GuiChangeCargosAmountCommand
-from .gui.cargo.changeMetas import GuiChangeCargoMetasCommand
-from .gui.cargo.imprt import GuiImportCargosCommand
-from .gui.cargo.remove import GuiRemoveCargosCommand
-from .gui.commandFit.add import GuiAddCommandFitsCommand
-from .gui.commandFit.remove import GuiRemoveCommandFitsCommand
-from .gui.commandFit.toggleStates import GuiToggleCommandFitStatesCommand
-from .gui.commandLink.add import GuiAddCommandLinkCommand
-from .gui.commandLink.remove import GuiRemoveCommandLinksCommand
-from .gui.commandLink.toggleStates import GuiToggleCommandLinkStatesCommand
-from .gui.fitPilotSecurity import GuiChangeFitPilotSecurityCommand
-from .gui.fitRename import GuiRenameFitCommand
-from .gui.fitRestrictionToggle import GuiToggleFittingRestrictionsCommand
-from .gui.fitSystemSecurity import GuiChangeFitSystemSecurityCommand
-from .gui.implant.add import GuiAddImplantCommand
-from .gui.implant.changeLocation import GuiChangeImplantLocationCommand
-from .gui.implant.changeMeta import GuiChangeImplantMetaCommand
-from .gui.implant.imprt import GuiImportImplantsCommand
-from .gui.implant.remove import GuiRemoveImplantsCommand
-from .gui.implant.setAdd import GuiAddImplantSetCommand
-from .gui.implant.toggleStates import GuiToggleImplantStatesCommand
-from .gui.itemsRebase import GuiRebaseItemsCommand
-from .gui.localDrone.add import GuiAddLocalDroneCommand
-from .gui.localDrone.changeAmount import GuiChangeLocalDroneAmountCommand
-from .gui.localDrone.changeMetas import GuiChangeLocalDroneMetasCommand
-from .gui.localDrone.changeMutation import GuiChangeLocalDroneMutationCommand
-from .gui.localDrone.clone import GuiCloneLocalDroneCommand
-from .gui.localDrone.imprt import GuiImportLocalDronesCommand
-from .gui.localDrone.mutatedConvert import GuiConvertMutatedLocalDroneCommand
-from .gui.localDrone.mutatedImport import GuiImportLocalMutatedDroneCommand
-from .gui.localDrone.mutatedRevert import GuiRevertMutatedLocalDroneCommand
-from .gui.localDrone.remove import GuiRemoveLocalDronesCommand
-from .gui.localDrone.stackSplit import GuiSplitLocalDroneStackCommand
-from .gui.localDrone.stacksMerge import GuiMergeLocalDroneStacksCommand
-from .gui.localDrone.toggleStates import GuiToggleLocalDroneStatesCommand
-from .gui.localFighter.abilityToggleState import GuiToggleLocalFighterAbilityStateCommand
-from .gui.localFighter.add import GuiAddLocalFighterCommand
-from .gui.localFighter.changeAmount import GuiChangeLocalFighterAmountCommand
-from .gui.localFighter.changeMetas import GuiChangeLocalFighterMetasCommand
-from .gui.localFighter.imprt import GuiImportLocalFightersCommand
-from .gui.localFighter.remove import GuiRemoveLocalFightersCommand
-from .gui.localFighter.toggleStates import GuiToggleLocalFighterStatesCommand
-from .gui.localModule.add import GuiAddLocalModuleCommand
-from .gui.localModule.changeCharges import GuiChangeLocalModuleChargesCommand
-from .gui.localModule.changeMetas import GuiChangeLocalModuleMetasCommand
-from .gui.localModule.changeMutation import GuiChangeLocalModuleMutationCommand
-from .gui.localModule.changeSpool import GuiChangeLocalModuleSpoolCommand
-from .gui.localModule.changeStates import GuiChangeLocalModuleStatesCommand
-from .gui.localModule.clone import GuiCloneLocalModuleCommand
-from .gui.localModule.fillAdd import GuiFillWithNewLocalModulesCommand
-from .gui.localModule.fillClone import GuiFillWithClonedLocalModulesCommand
-from .gui.localModule.mutatedConvert import GuiConvertMutatedLocalModuleCommand
-from .gui.localModule.mutatedImport import GuiImportLocalMutatedModuleCommand
-from .gui.localModule.mutatedRevert import GuiRevertMutatedLocalModuleCommand
-from .gui.localModule.remove import GuiRemoveLocalModuleCommand
-from .gui.localModule.replace import GuiReplaceLocalModuleCommand
-from .gui.localModule.swap import GuiSwapLocalModulesCommand
-from .gui.localModuleCargo.cargoToLocalModule import GuiCargoToLocalModuleCommand
-from .gui.localModuleCargo.localModuleToCargo import GuiLocalModuleToCargoCommand
-from .gui.projectedChangeProjectionRange import GuiChangeProjectedItemsProjectionRangeCommand
-from .gui.projectedChangeStates import GuiChangeProjectedItemStatesCommand
-from .gui.projectedDrone.add import GuiAddProjectedDroneCommand
-from .gui.projectedDrone.changeAmount import GuiChangeProjectedDroneAmountCommand
-from .gui.projectedDrone.changeMetas import GuiChangeProjectedDroneMetasCommand
-from .gui.projectedFighter.abilityToggleState import GuiToggleProjectedFighterAbilityStateCommand
-from .gui.projectedFighter.add import GuiAddProjectedFighterCommand
-from .gui.projectedFighter.changeAmount import GuiChangeProjectedFighterAmountCommand
-from .gui.projectedFighter.changeMetas import GuiChangeProjectedFighterMetasCommand
-from .gui.projectedFit.add import GuiAddProjectedFitsCommand
-from .gui.projectedFit.changeAmount import GuiChangeProjectedFitAmountCommand
-from .gui.projectedModule.add import GuiAddProjectedModuleCommand
-from .gui.projectedModule.changeCharges import GuiChangeProjectedModuleChargesCommand
-from .gui.projectedModule.changeMetas import GuiChangeProjectedModuleMetasCommand
-from .gui.projectedModule.changeSpool import GuiChangeProjectedModuleSpoolCommand
-from .gui.projectedRemove import GuiRemoveProjectedItemsCommand
-from .gui.shipModeChange import GuiChangeShipModeCommand
+"""Undoable fit commands, resolved lazily.
+
+Each command lives in its own module, and the ones under ``gui/`` import
+``gui.mainFrame`` -- dragging in the entire wxPython widget tree. The web backend
+needs the ``calc/`` commands but must not import any widgets, so the ``Gui*``
+commands are resolved on first attribute access instead of at import time:
+
+    import gui.fitCommands as cmd
+    cmd.GuiAddLocalModuleCommand(fitID=fitID, itemID=itemID)
+
+Names are re-exported exactly as before, so desktop callers are unaffected.
+"""
+
+from importlib import import_module
+
+
+_COMMAND_MODULES = {
+    'GuiAddBoosterCommand': '.gui.booster.add',
+    'GuiChangeBoosterMetaCommand': '.gui.booster.changeMeta',
+    'GuiImportBoostersCommand': '.gui.booster.imprt',
+    'GuiRemoveBoostersCommand': '.gui.booster.remove',
+    'GuiToggleBoosterSideEffectStateCommand': '.gui.booster.sideEffectToggleState',
+    'GuiToggleBoosterStatesCommand': '.gui.booster.toggleStates',
+    'GuiAddCargoCommand': '.gui.cargo.add',
+    'GuiChangeCargosAmountCommand': '.gui.cargo.changeAmount',
+    'GuiChangeCargoMetasCommand': '.gui.cargo.changeMetas',
+    'GuiImportCargosCommand': '.gui.cargo.imprt',
+    'GuiRemoveCargosCommand': '.gui.cargo.remove',
+    'GuiAddCommandFitsCommand': '.gui.commandFit.add',
+    'GuiRemoveCommandFitsCommand': '.gui.commandFit.remove',
+    'GuiToggleCommandFitStatesCommand': '.gui.commandFit.toggleStates',
+    'GuiAddCommandLinkCommand': '.gui.commandLink.add',
+    'GuiRemoveCommandLinksCommand': '.gui.commandLink.remove',
+    'GuiToggleCommandLinkStatesCommand': '.gui.commandLink.toggleStates',
+    'GuiChangeFitPilotSecurityCommand': '.gui.fitPilotSecurity',
+    'GuiRenameFitCommand': '.gui.fitRename',
+    'GuiToggleFittingRestrictionsCommand': '.gui.fitRestrictionToggle',
+    'GuiChangeFitSystemSecurityCommand': '.gui.fitSystemSecurity',
+    'GuiAddImplantCommand': '.gui.implant.add',
+    'GuiChangeImplantLocationCommand': '.gui.implant.changeLocation',
+    'GuiChangeImplantMetaCommand': '.gui.implant.changeMeta',
+    'GuiImportImplantsCommand': '.gui.implant.imprt',
+    'GuiRemoveImplantsCommand': '.gui.implant.remove',
+    'GuiAddImplantSetCommand': '.gui.implant.setAdd',
+    'GuiToggleImplantStatesCommand': '.gui.implant.toggleStates',
+    'GuiRebaseItemsCommand': '.gui.itemsRebase',
+    'GuiAddLocalDroneCommand': '.gui.localDrone.add',
+    'GuiChangeLocalDroneAmountCommand': '.gui.localDrone.changeAmount',
+    'GuiChangeLocalDroneMetasCommand': '.gui.localDrone.changeMetas',
+    'GuiChangeLocalDroneMutationCommand': '.gui.localDrone.changeMutation',
+    'GuiCloneLocalDroneCommand': '.gui.localDrone.clone',
+    'GuiImportLocalDronesCommand': '.gui.localDrone.imprt',
+    'GuiConvertMutatedLocalDroneCommand': '.gui.localDrone.mutatedConvert',
+    'GuiImportLocalMutatedDroneCommand': '.gui.localDrone.mutatedImport',
+    'GuiRevertMutatedLocalDroneCommand': '.gui.localDrone.mutatedRevert',
+    'GuiRemoveLocalDronesCommand': '.gui.localDrone.remove',
+    'GuiSplitLocalDroneStackCommand': '.gui.localDrone.stackSplit',
+    'GuiMergeLocalDroneStacksCommand': '.gui.localDrone.stacksMerge',
+    'GuiToggleLocalDroneStatesCommand': '.gui.localDrone.toggleStates',
+    'GuiToggleLocalFighterAbilityStateCommand': '.gui.localFighter.abilityToggleState',
+    'GuiAddLocalFighterCommand': '.gui.localFighter.add',
+    'GuiChangeLocalFighterAmountCommand': '.gui.localFighter.changeAmount',
+    'GuiChangeLocalFighterMetasCommand': '.gui.localFighter.changeMetas',
+    'GuiImportLocalFightersCommand': '.gui.localFighter.imprt',
+    'GuiRemoveLocalFightersCommand': '.gui.localFighter.remove',
+    'GuiToggleLocalFighterStatesCommand': '.gui.localFighter.toggleStates',
+    'GuiAddLocalModuleCommand': '.gui.localModule.add',
+    'GuiChangeLocalModuleChargesCommand': '.gui.localModule.changeCharges',
+    'GuiChangeLocalModuleMetasCommand': '.gui.localModule.changeMetas',
+    'GuiChangeLocalModuleMutationCommand': '.gui.localModule.changeMutation',
+    'GuiChangeLocalModuleSpoolCommand': '.gui.localModule.changeSpool',
+    'GuiChangeLocalModuleStatesCommand': '.gui.localModule.changeStates',
+    'GuiCloneLocalModuleCommand': '.gui.localModule.clone',
+    'GuiFillWithNewLocalModulesCommand': '.gui.localModule.fillAdd',
+    'GuiFillWithClonedLocalModulesCommand': '.gui.localModule.fillClone',
+    'GuiConvertMutatedLocalModuleCommand': '.gui.localModule.mutatedConvert',
+    'GuiImportLocalMutatedModuleCommand': '.gui.localModule.mutatedImport',
+    'GuiRevertMutatedLocalModuleCommand': '.gui.localModule.mutatedRevert',
+    'GuiRemoveLocalModuleCommand': '.gui.localModule.remove',
+    'GuiReplaceLocalModuleCommand': '.gui.localModule.replace',
+    'GuiSwapLocalModulesCommand': '.gui.localModule.swap',
+    'GuiCargoToLocalModuleCommand': '.gui.localModuleCargo.cargoToLocalModule',
+    'GuiLocalModuleToCargoCommand': '.gui.localModuleCargo.localModuleToCargo',
+    'GuiChangeProjectedItemsProjectionRangeCommand': '.gui.projectedChangeProjectionRange',
+    'GuiChangeProjectedItemStatesCommand': '.gui.projectedChangeStates',
+    'GuiAddProjectedDroneCommand': '.gui.projectedDrone.add',
+    'GuiChangeProjectedDroneAmountCommand': '.gui.projectedDrone.changeAmount',
+    'GuiChangeProjectedDroneMetasCommand': '.gui.projectedDrone.changeMetas',
+    'GuiToggleProjectedFighterAbilityStateCommand': '.gui.projectedFighter.abilityToggleState',
+    'GuiAddProjectedFighterCommand': '.gui.projectedFighter.add',
+    'GuiChangeProjectedFighterAmountCommand': '.gui.projectedFighter.changeAmount',
+    'GuiChangeProjectedFighterMetasCommand': '.gui.projectedFighter.changeMetas',
+    'GuiAddProjectedFitsCommand': '.gui.projectedFit.add',
+    'GuiChangeProjectedFitAmountCommand': '.gui.projectedFit.changeAmount',
+    'GuiAddProjectedModuleCommand': '.gui.projectedModule.add',
+    'GuiChangeProjectedModuleChargesCommand': '.gui.projectedModule.changeCharges',
+    'GuiChangeProjectedModuleMetasCommand': '.gui.projectedModule.changeMetas',
+    'GuiChangeProjectedModuleSpoolCommand': '.gui.projectedModule.changeSpool',
+    'GuiRemoveProjectedItemsCommand': '.gui.projectedRemove',
+    'GuiChangeShipModeCommand': '.gui.shipModeChange',
+}
+
+
+def __getattr__(name):
+    moduleName = _COMMAND_MODULES.get(name)
+    if moduleName is None:
+        raise AttributeError("module {!r} has no attribute {!r}".format(__name__, name))
+    value = getattr(import_module(moduleName, __name__), name)
+    globals()[name] = value
+    return value
+
+
+def __dir__():
+    return sorted(set(globals()) | set(_COMMAND_MODULES))

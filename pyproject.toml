@@ -33,6 +33,15 @@ dev = [
 packaging = [
     "pyinstaller==6.21.0",
 ]
+# Everything the web front end needs. Notably it does *not* include wxPython:
+# the server runs the engine headlessly (see pyfa_compat/).
+web = [
+    "fastapi==0.141.1",
+    "uvicorn[standard]==0.54.0",
+    "itsdangerous==2.2.0",
+    "httpx==0.28.1",
+    "pytest==9.1.1",
+]
 
 wx-binary = [
     "wxPython==4.3.1+ubuntu2204 ; sys_platform == 'linux'",
@@ -40,6 +49,16 @@ wx-binary = [
 ]
 wx-source = [
     "wxPython==4.3.1",
+]
+
+[project.optional-dependencies]
+# Same set as the `web` dependency group, for plain pip users:
+#   pip install -e ".[web]"
+web = [
+    "fastapi==0.141.1",
+    "uvicorn[standard]==0.54.0",
+    "itsdangerous==2.2.0",
+    "httpx==0.28.1",
 ]
 
 [tool.uv]

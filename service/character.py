@@ -144,10 +144,12 @@ class Character:
 
     @classmethod
     def getInstance(cls):
-        if cls.instance is None:
-            cls.instance = Character()
+        # Scoped per saveddata session context: __init__ seeds the default
+        # characters in the database of whoever is asking, and skillReqsDict is
+        # per-request state. See eos/db/sessionctx.py
+        from eos.db.sessionctx import scoped_instance
 
-        return cls.instance
+        return scoped_instance(cls, cls)
 
     def __init__(self):
         # Simply initializes default characters in case they aren't in the database yet

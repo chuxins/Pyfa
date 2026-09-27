@@ -60,10 +60,12 @@ class Fit:
 
     @classmethod
     def getInstance(cls):
-        if cls.instance is None:
-            cls.instance = Fit()
+        # One instance per saveddata session context: this object caches the default
+        # character, damage pattern and target profile, all of which belong to a
+        # single user's database. Desktop mode has exactly one context.
+        from eos.db.sessionctx import scoped_instance
 
-        return cls.instance
+        return scoped_instance(cls, cls)
 
     def __init__(self):
         pyfalog.debug("Initialize Fit class")

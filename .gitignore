@@ -129,3 +129,18 @@ gitversion
 
 # vscode settings
 .vscode
+
+# Node.js frontend dependencies
+node_modules/
+
+# pyfa web server runtime data (per-user databases, session keys, secrets)
+webdata/
+
+# Local server configuration. This file holds the EVE SSO client secret, so the
+# real web.yml stays out of the repository; web.yml.example is the checked-in
+# template.
+web.yml
+
+# Tool caches
+.pytest_cache/
+.ruff_cache/

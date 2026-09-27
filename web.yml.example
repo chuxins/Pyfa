@@ -1,0 +1,53 @@
+# Copy to web.yml and adjust. Environment variables (PYFA_WEB_*) win over this file.
+
+# Where the account database, per-user databases, settings and logs live.
+data_dir: webdata
+
+# Bind address. Use 0.0.0.0 inside a container.
+host: 127.0.0.1
+port: 8080
+
+# The URL the browser reaches this server on. Required for EVE SSO: the callback
+# registered with CCP must be exactly <public_url>/api/auth/callback.
+public_url: http://127.0.0.1:8080
+
+# Session cookie signing key. Generated and persisted to <data_dir>/session.key
+# when left empty; rotating it signs everyone out.
+secret_key: ""
+
+# Mark the session cookie Secure. Leave this unset to infer it from public_url
+# (an https public_url marks it Secure); set it to override the inference.
+# cookie_secure: false
+
+# Session lifetime in seconds (default 30 days).
+session_max_age: 2592000
+
+# Language used for game data text (item names) and as the default for the UI
+# chrome. Server-wide: pyfa binds an item's name column to a language while the
+# engine is imported, so per-user item names are not possible and changing this
+# needs a restart. eve.db carries translated names for en, fr, ja, ko, ru and zh;
+# other languages fall back to English. A browser can still pick its own UI
+# language; see web/docs/web.md, "Interface language".
+language: en_US
+
+# critical | error | warning | info | debug
+log_level: info
+
+# Development only: log in without EVE SSO as a single shared local account.
+# Never enable this on a reachable server.
+dev_auth_bypass: false
+
+sso:
+  # Tranquility or Serenity
+  server: Tranquility
+  # From https://developers.eveonline.com -- leave empty to disable SSO login.
+  client_id: ""
+  # Only needed by confidential applications; public (PKCE) apps leave it empty.
+  client_secret: ""
+  # Override only if you need a different path.
+  callback_path: /api/auth/callback
+  # Defaults to what pyfa itself requests.
+  # scopes:
+  #   - esi-skills.read_skills.v1
+  #   - esi-fittings.read_fittings.v1
+  #   - esi-fittings.write_fittings.v1

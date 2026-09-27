@@ -55,6 +55,19 @@ LocalMap = {
 }
 
 
+# The same ladder walked all the way up and back down again, overload included:
+# online -> active -> overheated -> online. The desktop application does not send that
+# click (it uses left, right and ctrl), so this only adds a vocabulary entry for
+# callers that want a click to be able to reach the overloaded state -- see the
+# ``cycle`` branch of :meth:`Module.getProposedState`.
+LocalCycleMap = {
+    FittingModuleState.OFFLINE: FittingModuleState.ONLINE,
+    FittingModuleState.ONLINE: FittingModuleState.ACTIVE,
+    FittingModuleState.ACTIVE: FittingModuleState.OVERHEATED,
+    FittingModuleState.OVERHEATED: FittingModuleState.ONLINE
+}
+
+
 # For system effects. They should only ever be online or offline
 ProjectedSystem = {
     FittingModuleState.OFFLINE: FittingModuleState.ONLINE,
@@ -1076,6 +1089,21 @@ class Module(HandledItem, HandledCharge, ItemAttrShortcut, ChargeAttrShortcut, M
             state = FittingModuleState.OVERHEATED
         elif click == "ctrl":
             state = FittingModuleState.OFFLINE
+        elif click == "cycle":
+            # A full lap of the state column: each click moves one state up, and overload
+            # drops back to online instead of walking back down through what it passed.
+            # Only local modules have that ladder; projected ones and system effects keep
+            # their own, one-step map.
+            if transitionMap is LocalMap:
+                state = LocalCycleMap.get(currState, FittingModuleState.ONLINE)
+                if not mod.isValidState(state):
+                    # There is nothing up there to reach: a passive module, one that is
+                    # activation blocked, or one that cannot be overloaded. Keeping pyfa's
+                    # two-step toggle in that case is what stops the click from proposing the
+                    # state the module is already in, which reads as "nothing changed".
+                    state = LocalMap.get(currState, FittingModuleState.ONLINE)
+            else:
+                state = transitionMap.get(currState, min(transitionMap))
         else:
             try:
                 state = transitionMap[currState]
