@@ -193,6 +193,22 @@ def serialize_item(item, detail=False):
     return data
 
 
+def module_accepts_charges(module):
+    """Whether a module has a charge slot at all.
+
+    ``Module.getValidCharges`` reads ``chargeGroup0`` .. ``chargeGroup4`` and nothing
+    else, so a module carrying none of them can never take a charge: the two agree on
+    every published module in the game data (997 of the 4252 carry a charge group, and
+    each of those has at least one valid charge). Reading those attributes is also what
+    makes the question affordable -- asking for the charges themselves loads a group and
+    all of its items out of the static data, which is more than a fit's every row can
+    pay for.
+    """
+    return any(
+        module.getModifiedItemAttr("chargeGroup" + str(index), None) for index in range(5)
+    )
+
+
 def serialize_charge(module):
     charge = getattr(module, "charge", None)
     if charge is None:
@@ -218,6 +234,9 @@ def serialize_module(module, position=None):
     }
     if not module.isEmpty:
         data["charge"] = serialize_charge(module)
+        #: Whether the row has a charge slot to offer: a heat sink has none, and the
+        #: fitting view hides the control rather than open a list that is always empty
+        data["canFitCharges"] = module_accepts_charges(module)
         #: What the high rack offers to group: a turret, a launcher, or nothing
         data["hardpoint"] = hardpoint_name(module.hardpoint)
         data["isMutated"] = bool(getattr(module, "isMutated", False))

@@ -1,8 +1,8 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
-import { useBrowserStore } from '@/stores/browser'
+import { DetailTab, useBrowserStore } from '@/stores/browser'
 import { useFittingStore } from '@/stores/fitting'
-import { imageUrl } from '@/api'
+import { imageUrl, Item } from '@/api'
 import { formatAmount } from '@/format'
 import { t } from '@/i18n'
 
@@ -12,9 +12,37 @@ const fitting = useFittingStore()
 const emit = defineEmits<{ close: [] }>()
 
 const onlyChanged = ref(false)
-const tab = ref<'attributes' | 'charges' | 'variations' | 'skills'>('attributes')
+
+/**
+ * The open tab lives in the browser store, so a click elsewhere in the window -- a
+ * module's charge slot, which promises a charge list -- can choose it.
+ */
+const tab = computed({
+  get: () => browser.selectedTab,
+  set: (value: DetailTab) => (browser.selectedTab = value),
+})
 
 const item = computed(() => browser.selectedItem)
+
+/**
+ * The charge the module this pane was opened from has loaded, when the pane is about a
+ * rack module: the charge list marks that row, and leaves its "load" button disabled.
+ */
+const loadedChargeId = computed(() => fitting.selectedRackModule?.charge?.item.id ?? null)
+
+/**
+ * A charge row. The loaded one opens as fitted -- the numbers the fit gives it, which is
+ * what the fitting view's charge chip used to show directly; every other row is the type's
+ * own values until it is loaded.
+ */
+function inspectCharge(charge: Item) {
+  const module = fitting.selectedRackModule
+  if (module && fitting.fit && module.charge?.item.id === charge.id) {
+    browser.selectItem(charge, { id: fitting.fit.id, position: module.position, kind: 'moduleCharge' })
+    return
+  }
+  browser.selectItem(charge)
+}
 
 const attributes = computed(() => {
   if (!onlyChanged.value || !browser.selectedAttributesModified) return browser.selectedAttributes
@@ -71,7 +99,13 @@ const canAdd = computed(() => {
 
     <nav class="tabs">
       <button :class="{ active: tab === 'attributes' }" @click="tab = 'attributes'">{{ t('Attributes') }}</button>
-      <button :class="{ active: tab === 'charges' }" @click="tab = 'charges'">
+      <!-- Only an item that can take charges gets the tab, so a heat sink or an armor
+           plate never offers a charge list that could only ever be empty -->
+      <button
+        v-if="browser.selectedCharges.length"
+        :class="{ active: tab === 'charges' }"
+        @click="tab = 'charges'"
+      >
         {{ t('Charges ({count})', { count: browser.selectedCharges.length }) }}
       </button>
       <button :class="{ active: tab === 'variations' }" @click="tab = 'variations'">
@@ -102,8 +136,17 @@ const canAdd = computed(() => {
 
       <template v-else-if="tab === 'charges'">
         <div v-for="charge in browser.selectedCharges" :key="charge.id" class="line">
-          <button class="linkish" @click="browser.selectItem(charge)">{{ charge.name }}</button>
-          <button class="addsmall" :disabled="!fitting.fit || fitting.busy" @click="loadCharge(charge.id)">{{ t('load') }}</button>
+          <span class="chargename">
+            <button class="linkish" @click="inspectCharge(charge)">{{ charge.name }}</button>
+            <span v-if="charge.id === loadedChargeId" class="tag">{{ t('(loaded)') }}</span>
+          </span>
+          <button
+            class="addsmall"
+            :disabled="charge.id === loadedChargeId || !fitting.fit || fitting.busy"
+            @click="loadCharge(charge.id)"
+          >
+            {{ t('load') }}
+          </button>
         </div>
         <div v-if="!browser.selectedCharges.length" class="dim pad">{{ t('This item takes no charges.') }}</div>
       </template>
@@ -238,6 +281,14 @@ const canAdd = computed(() => {
   text-align: left;
   padding: 2px 0;
   color: var(--accent);
+}
+
+.chargename {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  min-width: 0;
+  overflow: hidden;
 }
 
 .addsmall {

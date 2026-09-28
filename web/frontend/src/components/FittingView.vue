@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 import { useFittingStore } from '@/stores/fitting'
-import { useBrowserStore } from '@/stores/browser'
+import { DetailTab, useBrowserStore } from '@/stores/browser'
 import { imageUrl, FittedKind, Item, Module } from '@/api'
 import { formatAmount } from '@/format'
 import { t } from '@/i18n'
@@ -39,10 +39,14 @@ function moduleImage(module: Module) {
   return imageUrl(module.item?.image, 1)
 }
 
-function selectModule(module: Module) {
+/**
+ * Open a rack module in the details pane, on the tab the click asked for: the charge
+ * slot comes up on the charge list, a click on the name on the module's own values.
+ */
+function selectModule(module: Module, tab: DetailTab = 'attributes') {
   if (module.isEmpty || !module.item) return
   fitting.selectedModule = module.position
-  browser.selectItem(module.item, { id: fitting.fit!.id, position: module.position, kind: 'module' })
+  browser.selectItem(module.item, { id: fitting.fit!.id, position: module.position, kind: 'module' }, tab)
 }
 
 /**
@@ -54,17 +58,6 @@ function selectModule(module: Module) {
  */
 function inspect(item: Item, index: number, kind: FittedKind) {
   browser.selectItem(item, { id: fitting.fit!.id, position: index, kind })
-}
-
-/** The loaded charge is part of the module's row, and has values of its own. */
-function inspectCharge(module: Module) {
-  if (!module.charge) return
-  fitting.selectedModule = module.position
-  browser.selectItem(module.charge.item, {
-    id: fitting.fit!.id,
-    position: module.position,
-    kind: 'moduleCharge',
-  })
 }
 
 /**
@@ -96,9 +89,24 @@ function stateTitle(module: Module) {
   return groupSize(module) > 1 ? title + t(' · the whole weapon group moves together') : title
 }
 
-/** Opening the module in the details pane is also how charges get loaded. */
+/**
+ * Open a module's charge list in the details pane.
+ *
+ * The same call serves the empty slot's "load…" button and the charge already in the
+ * slot: clicking what is loaded is how a different ammunition is picked, and the pane
+ * marks the row that is in there now (see `ItemDetails.vue`).
+ */
 function pickCharge(module: Module) {
-  selectModule(module)
+  selectModule(module, 'charges')
+}
+
+/**
+ * Only a module with a charge slot gets a charge control. A heat sink, a rig or an
+ * armor plate takes no charge at all (the server says so in `canFitCharges`), so the
+ * button would only ever open a list that says the item needs no ammunition.
+ */
+function canLoadCharge(module: Module) {
+  return !module.isEmpty && module.canFitCharges === true
 }
 
 const containers = computed(() => fitting.fit)
@@ -154,16 +162,14 @@ const containers = computed(() => fitting.fit)
 
         <span class="charge">
           <template v-if="module.charge">
-            <button
-              class="chargebtn"
-              :title="t('click to inspect the loaded charge as fitted')"
-              @click="inspectCharge(module)"
-            >
+            <!-- Clicking what is loaded is the shortest road to another ammunition: the
+                 charge list comes up with that row marked as the one in there now -->
+            <button class="chargebtn" :title="t('click to change the charge')" @click="pickCharge(module)">
               {{ module.charge.item.name }}
             </button>
             <span class="dim mono">x{{ module.charge.amount }}</span>
           </template>
-          <button v-else-if="!module.isEmpty" class="load" @click="pickCharge(module)">{{ t('load…') }}</button>
+          <button v-else-if="canLoadCharge(module)" class="load" @click="pickCharge(module)">{{ t('load…') }}</button>
         </span>
 
         <button

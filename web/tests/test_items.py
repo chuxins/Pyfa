@@ -71,6 +71,31 @@ def test_charge_targets_require_a_real_fit(user_client):
     assert response.status_code == 404
 
 
+def test_a_row_says_whether_it_takes_charges_at_all(user_client):
+    """The fitting view draws a charge control only where one can be filled.
+
+    A 200mm AutoCannon II takes ammunition and a Damage Control II never will, and the
+    row says which it is (see ``serialize_module``). The charge slot follows that flag
+    instead of asking the engine for the charges themselves, which would load a group and
+    all of its items out of the static data for every row of every fit.
+    """
+    fit_id, position = gun_fit(user_client)
+    user_client.post('/api/fits/{}/commands'.format(fit_id),
+                     json={'command': 'addLocalModule', 'args': {'itemId': DAMAGE_CONTROL_II}})
+
+    detail = user_client.get('/api/fits/{}'.format(fit_id)).json()
+    rows = {module['item']['name']: module
+            for module in detail['racks']['high'] + detail['racks']['low']
+            if not module['isEmpty']}
+    assert rows['200mm AutoCannon II']['position'] == position
+    assert rows['200mm AutoCannon II']['canFitCharges'] is True
+    assert rows['Damage Control II']['canFitCharges'] is False
+    # A charge slot with nothing in it is a different thing from an empty slot
+    assert rows['200mm AutoCannon II']['charge'] is None
+    assert 'canFitCharges' not in next(
+        module for module in detail['racks']['high'] if module['isEmpty'])
+
+
 def test_variations_and_requirements_are_available(client):
     variations = client.get('/api/items/{}/variations'.format(AUTOCANNON_ID)).json()['variations']
     assert variations

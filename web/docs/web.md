@@ -15,14 +15,20 @@ single-page app in the browser:
   has, listed under it, and one button that imports the pilot's in-game fittings from EVE)
 * fitting view: high/med/low/rig/subsystem racks, drones, fighters, cargo,
   implants, boosters, projected items, with a state chip on every module -- click
-  walks online, active and overloaded, ctrl-click takes it offline
+  walks online, active and overloaded, ctrl-click takes it offline. A module that
+  takes ammunition carries a charge slot beside its name; the game data's charge
+  groups decide, so a heat sink, an armor plate or a microwarpdrive has none and
+  the fit never offers to load a charge into one. Clicking the charge that is in a
+  slot opens that module's charge list with the round in there marked, which is how
+  a different ammunition is picked
 * weapon grouping in the high rack: one button links the same weapon there, and
   while it is on a state click or a loaded charge reaches every weapon in the
   group. Nothing about it is saved -- the engine has no weapon groups, so it lives
   in the browser and lasts as long as the fit stays open
 * the item panel opened from a row of a fit shows what the fit makes of that item:
   post-fit values for a module, drone, fighter, cargo stack, implant, booster or the
-  charge loaded in a module, each modified attribute with its base value beside it
+  charge loaded in a module, each modified attribute with its base value beside it,
+  and the charges that item can take -- a tab that is only there when it can take any
 * the same stats the desktop window shows: firepower (with spool-up ranges),
   capacitor, tank, resistances, resources, targeting, remote reps, mining
 * editing with **the desktop's own undo/redo stack** for every fit
@@ -31,6 +37,13 @@ single-page app in the browser:
   browser, plus game data text (ship, item, group, category and attribute names, and
   the units they are measured in) in the language set for the whole server (see
   "Interface language")
+* no sign-in wall: ship and item data are readable without an account, so the browser,
+  the fitting view and the stats are up from the start; the clicks that have to write ask
+  for a login in a dialog and come back to the same page afterwards (see "Signing in"),
+  while the top bar keeps its sign-in link and its sign-out button either way
+* opening the app lands on the fit that was last worked on, so the assembly page is what
+  comes up rather than an empty frame; the id is remembered in the browser alone, and a
+  first visit opens the most recently changed fit
 
 ## Running it
 
@@ -112,6 +125,18 @@ the sentence itself (see "Refused edits"). Everything written by the front end i
 
 EVE SSO is the only login method: a user *is* an EVE character, which is also how
 their fits stay tied to the pilot that owns them.
+
+Signing in is not a gate in front of the page. Reads work without a session -- a request
+with no user is answered from a guest context, which is why the ship tree, the item
+browser and the stats panes draw for a visitor -- so what a session adds is the fits
+themselves, the live updates and every write. A click that writes (importing the in-game
+fittings, a new fit, fitting a module) therefore asks for the login at that point, in a
+dialog whose button comes back to the same page (`?next=`), rather than failing with an
+error the click cannot act on. Every `401` is reported to the shell (`onUnauthorized` in
+`web/frontend/src/api.ts`) and raises the same dialog
+(`web/frontend/src/components/LoginPrompt.vue`), so no write has to recognise it on its
+own. The top bar keeps a plain sign-in link while nobody is signed in and a sign-out
+button with the character name while somebody is.
 
 You must register an application with CCP (<https://developers.eveonline.com>)
 whose **callback URL** is exactly `PYFA_WEB_PUBLIC_URL` + `sso.callback_path` --
@@ -449,12 +474,14 @@ run fully in parallel. Idle user databases are closed after 30 minutes.
 python -m pytest web/tests -q
 ```
 
-162 tests covering the API, the engine numbers (a Rifter with a 200mm AutoCannon II
+163 tests covering the API, the engine numbers (a Rifter with a 200mm AutoCannon II
 and EMP S must show 38.96 DPS, exactly as the desktop does), the edit commands, what a
 refused edit explains, the state chip's click cycle (overload included, and the passive
 module the engine answers with "already online"), what the item panel reads for every
 row of a fit (the charge in a module is not the module, the names come from the game
 data's language columns, and an attribute the game data does not name is left out),
+whether a row takes a charge at all (the flag the fitting view draws its charge slot
+from: a weapon says yes, a damage control says no, and an empty slot saying nothing),
 what a grouped weapon reaches (state and charge, and the weapon of another type it must
 leave alone), and the undo stack. The isolation tests create two accounts and assert
 that neither can see, open, or undo the other's fits, and that touching saveddata

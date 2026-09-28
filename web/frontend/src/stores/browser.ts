@@ -5,6 +5,7 @@ import { defineStore } from 'pinia'
 import { api, AttributeRow, EsiImportResult, FittedKind, FitSummary, Item, ShipCategory, ShipSummary } from '@/api'
 import { errorText } from '@/errors'
 import { t } from '@/i18n'
+import { useSessionStore } from '@/stores/session'
 
 /** The tree row of one ship, so a single badge can be updated without re-reading the tree. */
 function findShip(categories: ShipCategory[], shipId: number): ShipSummary | null {
@@ -46,6 +47,9 @@ function importNotice(result: EsiImportResult): string {
   return parts.join('; ')
 }
 
+/** The tabs the details pane has, in the order it draws them. */
+export type DetailTab = 'attributes' | 'charges' | 'variations' | 'skills'
+
 export const useBrowserStore = defineStore('browser', {
   state: () => ({
     categories: [] as ShipCategory[],
@@ -79,6 +83,8 @@ export const useBrowserStore = defineStore('browser', {
     itemSearchError: '',
 
     selectedItem: null as Item | null,
+    /** The tab the details pane is on; a module's charge slot asks for `charges` */
+    selectedTab: 'attributes' as DetailTab,
     selectedAttributes: [] as AttributeRow[],
     selectedAttributesModified: false,
     selectedCharges: [] as Item[],
@@ -210,8 +216,16 @@ export const useBrowserStore = defineStore('browser', {
      * Fetch the fittings the logged-in pilot has saved in game and import them under
      * their ships. Nothing is written back to EVE, and fittings pyfa already has are
      * left alone (see `web/services/esiFittings.py`).
+     *
+     * Signed out there is nobody to read fittings for, so this asks for the sign-in the
+     * import needs instead of letting the call come back 401.
      */
     async importFromEsi() {
+      const session = useSessionStore()
+      if (!session.signedIn) {
+        session.promptLogin('import')
+        return
+      }
       this.importing = true
       this.error = ''
       try {
@@ -280,11 +294,19 @@ export const useBrowserStore = defineStore('browser', {
      * list the values the fit gives that item instead of the type's own, which is the
      * point of the pane once a fit is open. Only a module in a rack can be the target of
      * a charge, so the charge list asks about the fit only when that is what was clicked.
+     *
+     * `tab` is the tab the pane comes up on: clicking a module's charge slot asks for the
+     * charge list, every other click starts on the item's own values.
      */
-    async selectItem(item: Item, fit?: { id: number; position?: number | null; kind?: FittedKind }) {
+    async selectItem(
+      item: Item,
+      fit?: { id: number; position?: number | null; kind?: FittedKind },
+      tab: DetailTab = 'attributes',
+    ) {
       const fitted = fit && fit.position != null ? fit : null
       const moduleRow = fitted && (fitted.kind === undefined || fitted.kind === 'module') ? fitted : null
       this.selectedItem = item
+      this.selectedTab = tab
       this.detailLoading = true
       this.selectedAttributes = []
       this.selectedCharges = []
@@ -311,6 +333,7 @@ export const useBrowserStore = defineStore('browser', {
 
     clearItem() {
       this.selectedItem = null
+      this.selectedTab = 'attributes'
       this.selectedAttributes = []
       this.selectedCharges = []
       this.selectedVariations = []

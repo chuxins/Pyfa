@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, onMounted, onUnmounted, ref } from 'vue'
+import { onUnauthorized } from '@/api'
 import { useSessionStore } from '@/stores/session'
 import { useBrowserStore } from '@/stores/browser'
 import { useFittingStore } from '@/stores/fitting'
@@ -7,6 +8,7 @@ import { ssoErrorText } from '@/errors'
 import { LOCALES, locale, setLocale, t, type LocaleCode } from '@/i18n'
 import ShipBrowser from '@/components/ShipBrowser.vue'
 import FittingView from '@/components/FittingView.vue'
+import LoginPrompt from '@/components/LoginPrompt.vue'
 import StatsPane from '@/components/StatsPane.vue'
 import ItemBrowser from '@/components/ItemBrowser.vue'
 import ItemDetails from '@/components/ItemDetails.vue'
@@ -43,15 +45,25 @@ function takeSsoError(): string | null {
 }
 
 onMounted(async () => {
+  // A write the server turns down for want of a session raises the sign-in prompt instead
+  // of a banner the click cannot act on (see @/api, @/components/LoginPrompt.vue)
+  onUnauthorized(() => session.promptLogin())
+
   ssoError.value = takeSsoError()
   if (ssoError.value) {
     ssoErrorTimer = window.setTimeout(() => (ssoError.value = null), SSO_ERROR_TIMEOUT)
   }
 
   await session.load()
+  // The tree is readable without a session -- the server falls back to guest game data --
+  // so the ship list, the item browser and the stats panes are there from the start. The
+  // fits themselves and the live stream are what a session adds.
+  await browser.loadTree()
   if (session.signedIn) {
-    await browser.loadTree()
     fitting.connect()
+    // Land on the fit last worked on: the assembly page is the view to come up on, rather
+    // than an empty frame between the browser and the stats.
+    await fitting.openLast()
   }
 })
 
@@ -122,19 +134,26 @@ function changeLocale(event: Event) {
       <ShipBrowser class="sidebar" />
 
       <section class="center">
-        <div v-if="!session.signedIn" class="placeholder">
-          <h2>{{ t('Sign in to build fits') }}</h2>
-          <p class="dim">{{ t('EVE SSO is how pyfa web knows whose fits to load.') }}</p>
-          <a :href="signInHref"><button class="primary">{{ t('Sign in with EVE') }}</button></a>
-          <p v-if="!session.sso.configured" class="dim hint">
-            {{ t('EVE SSO is not configured on this server.') }}
-            {{ t('Set PYFA_WEB_SSO_CLIENT_ID, or run the server with --dev-login for development.') }}
-          </p>
-        </div>
-        <FittingView v-else-if="fitting.fit" />
+        <FittingView v-if="fitting.fit" />
         <div v-else class="placeholder">
-          <h2>{{ t('No fit open') }}</h2>
-          <p class="dim">{{ t('Pick a ship on the left, then open one of its fits or create a new one.') }}</p>
+          <!-- Signed out the page is still the whole application: it is the writes that
+               need an account, and the click that asks for one raises the sign-in dialog -->
+          <template v-if="session.signedIn">
+            <h2>{{ t('No fit open') }}</h2>
+            <p class="dim">{{ t('Pick a ship on the left, then open one of its fits or create a new one.') }}</p>
+          </template>
+          <template v-else>
+            <h2>{{ t('Sign in to build fits') }}</h2>
+            <p class="dim">
+              {{ t('Browsing ships and items works signed out; saving a fit needs an EVE login.') }}
+            </p>
+            <p class="dim">{{ t('EVE SSO is how pyfa web knows whose fits to load.') }}</p>
+            <a :href="signInHref"><button class="primary">{{ t('Sign in with EVE') }}</button></a>
+            <p v-if="!session.sso.configured" class="dim hint">
+              {{ t('EVE SSO is not configured on this server.') }}
+              {{ t('Set PYFA_WEB_SSO_CLIENT_ID, or run the server with --dev-login for development.') }}
+            </p>
+          </template>
         </div>
       </section>
 
@@ -145,6 +164,8 @@ function changeLocale(event: Event) {
     </main>
 
     <ItemBrowser v-if="itemPaneOpen" class="itembar" />
+
+    <LoginPrompt v-if="session.loginPrompt" @close="session.dismissLoginPrompt()" />
   </div>
 </template>
 

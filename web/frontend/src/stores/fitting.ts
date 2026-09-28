@@ -6,12 +6,38 @@
  * of a fit that could drift from the engine's.
  */
 import { defineStore } from 'pinia'
-import { api, Fit, History, Module } from '@/api'
+import { api, Fit, FitSummary, History, Module } from '@/api'
 import { errorText } from '@/errors'
 import { t } from '@/i18n'
 import { useBrowserStore } from '@/stores/browser'
+import { useSessionStore } from '@/stores/session'
 
 const RACK_ORDER = ['high', 'med', 'low', 'rig', 'subsystem', 'service', 'mode', 'system'] as const
+
+/**
+ * The fit the browser was last on, so opening the site lands in the assembly page of that
+ * fit instead of an empty frame. A browser-side convenience only: the server keeps no
+ * record of what a pilot looked at last.
+ */
+const LAST_FIT_KEY = 'pyfa.lastFit'
+
+function rememberFit(fitId: number) {
+  try {
+    window.localStorage.setItem(LAST_FIT_KEY, String(fitId))
+  } catch {
+    // Private mode, or storage turned off: the fit is remembered for this page only
+  }
+}
+
+function rememberedFit(): number | null {
+  try {
+    const stored = window.localStorage.getItem(LAST_FIT_KEY)
+    const fitId = stored === null ? Number.NaN : Number(stored)
+    return Number.isInteger(fitId) ? fitId : null
+  } catch {
+    return null
+  }
+}
 
 export const useFittingStore = defineStore('fitting', {
   state: () => ({
@@ -63,6 +89,20 @@ export const useFittingStore = defineStore('fitting', {
         .filter(([, positions]) => positions.length > 1)
         .map(([itemId, positions]) => ({ itemId, positions }))
     },
+
+    /**
+     * The rack module the details pane is talking to, when the click was on one. The
+     * charge list uses it to mark the charge that module already has loaded, which is
+     * where a different ammunition is picked.
+     */
+    selectedRackModule(state): Module | null {
+      if (state.selectedModule === null || !state.fit) return null
+      for (const name of RACK_ORDER) {
+        const module = (state.fit.racks[name] ?? []).find((entry) => entry.position === state.selectedModule)
+        if (module) return module
+      }
+      return null
+    },
   },
 
   actions: {
@@ -82,6 +122,7 @@ export const useFittingStore = defineStore('fitting', {
         this.applyFit(fit)
         this.selectedModule = null
         this.weaponGroups = false
+        rememberFit(fitId)
       } catch (error) {
         this.setError(error)
       } finally {
@@ -93,6 +134,29 @@ export const useFittingStore = defineStore('fitting', {
       this.fit = fit
       if (fit.history) this.history = fit.history
       this.quietUntil = Date.now() + 1500
+    },
+
+    /**
+     * Open the fit the browser was last on, so the site comes up on an assembly page
+     * rather than an empty frame.
+     *
+     * The remembered fit wins as long as it is still in the list; failing that -- a first
+     * visit, another browser, or a fit deleted since -- the most recently changed one
+     * does, since `/api/fits` arrives newest first. Read the list first so a fit that is
+     * gone is not opened at all: `open` would show the 404 as an error banner.
+     */
+    async openLast() {
+      if (this.fit) return
+      let fits: FitSummary[]
+      try {
+        ;({ fits } = await api.fits())
+      } catch (error) {
+        this.setError(error)
+        return
+      }
+      const remembered = rememberedFit()
+      const chosen = fits.find((entry) => entry.id === remembered) ?? fits[0]
+      if (chosen) await this.open(chosen.id)
     },
 
     async reload() {
@@ -197,6 +261,7 @@ export const useFittingStore = defineStore('fitting', {
     },
 
     async addItem(item: { id: number; itemKind: string }) {
+      if (!this.fit) return this.promptForMissingFit()
       switch (item.itemKind) {
         case 'module':
           return this.send('addLocalModule', { itemId: item.id })
@@ -215,9 +280,23 @@ export const useFittingStore = defineStore('fitting', {
       }
     },
 
+    /**
+     * A write with no fit open, from a pane that can be reached without one: the item
+     * browser's details pane draws signed out, so its "add" and "load" buttons are live
+     * with nothing to write to.
+     *
+     * Nobody signed in is why there is no fit, so ask for the login; a pilot who is signed
+     * in with nothing open gets the same silence those buttons have always given.
+     */
+    promptForMissingFit() {
+      const session = useSessionStore()
+      if (!session.signedIn) session.promptLogin()
+      return null
+    },
+
     /** Load a charge into the selected module, or every module that accepts it. */
     async loadCharge(chargeItemId: number) {
-      if (!this.fit) return null
+      if (!this.fit) return this.promptForMissingFit()
       if (this.selectedModule !== null) {
         // The selected module, plus the weapons it is grouped with: a weapon group shares
         // its ammunition, which is half of what grouping is for

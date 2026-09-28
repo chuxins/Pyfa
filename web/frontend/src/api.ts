@@ -91,6 +91,8 @@ export interface Module {
   state: 'offline' | 'online' | 'active' | 'overheated'
   amount: number
   charge?: { item: Item; amount: number } | null
+  /** Whether the module has a charge slot at all: a turret has one, a heat sink has not */
+  canFitCharges?: boolean
   /** "turret", "launcher" or null: what the high rack can group as weapons */
   hardpoint?: 'turret' | 'launcher' | null
   isMutated?: boolean
@@ -296,6 +298,21 @@ export class ApiError extends Error {
   }
 }
 
+/**
+ * What to do when the server turns a request down because nobody is signed in.
+ *
+ * Only reads fall back to the guest game data, so every write -- importing fits, creating
+ * one, fitting a module -- answers 401 to a visitor without a session. Rather than every
+ * caller recognising that, `request` reports it and the shell decides: it offers the
+ * sign-in that the click was going to need anyway (see `@/stores/session`).
+ */
+let unauthorizedHandler: (() => void) | null = null
+
+/** Install the handler for a 401. Called once, from the shell. */
+export function onUnauthorized(handler: () => void) {
+  unauthorizedHandler = handler
+}
+
 async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
   const response = await fetch(path, {
     credentials: 'same-origin',
@@ -313,6 +330,7 @@ async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
     }
   }
   if (!response.ok) {
+    if (response.status === 401) unauthorizedHandler?.()
     const detail = body && typeof body === 'object' ? body.detail : body
     if (typeof detail === 'string') throw new ApiError(response.status, detail)
     if (detail && typeof detail === 'object' && typeof detail.message === 'string') {
